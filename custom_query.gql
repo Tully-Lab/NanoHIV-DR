@@ -1,0 +1,41 @@
+inputSequence { header, 
+}, 
+subtypeText, 
+validationResults { 
+level, 
+message 
+},                 
+alignedGeneSequences { 
+firstAA, lastAA, 
+gene{ 
+name, length }, 
+DRM:mutations{text}
+},
+drugResistance                 {
+gene {
+name
+},
+drugScores {
+drugClass { name }, 
+drug {
+name,
+displayAbbr,
+fullName
+},
+                 score,
+partialScores { 
+mutations { 
+text,
+ primaryType, 
+comments {type, text} 
+}, 
+score 
+}, 
+text 
+},                 
+mutationsByTypes{ 
+mutationType, 
+mutations { 
+text} 
+} 
+}

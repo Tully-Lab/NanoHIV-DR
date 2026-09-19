@@ -1,0 +1,3 @@
+git+https://github.com/hivdb/sierra-client.git#subdirectory=python
+python-docx
+pandas

@@ -1,0 +1,52 @@
+# ============================================================
+# NanoHIV-DR .gitignore
+# ============================================================
+
+# --- Nextflow run artefacts ---
+.nextflow/
+.nextflow.log*
+work/
+report-*.html
+timeline-*.html
+trace-*.txt
+dag-*.html
+
+# --- Pipeline outputs ---
+results/
+results_*/
+report_test*/
+
+# --- Large binaries / models (keep locally; download or LFS instead) ---
+containers/
+dorado_models/
+
+# --- Reference genomes: exclude the large human genome, keep small HIV refs ---
+references/Human/
+
+# --- Sequencing data: keep the small test POD5, exclude large/real FASTQ ---
+data/*.fastq
+data/*.fastq.gz
+data/*.fq
+data/*.fq.gz
+# (data/pod5/filtered.pod5 IS tracked as test data)
+
+# --- Editor / OS / Python cruft ---
+.DS_Store
+**/.DS_Store
+__pycache__/
+*.pyc
+*.bak
+
+# --- Local metadata containing patient info (keep templates only) ---
+# Uncomment if your real metadata.tsv should not be published:
+# metadata.tsv
+
+# --- Archived stray/dev files (not for publication) ---
+dev_archive/
+
+# Downloaded public test reads (fetched by bin/fetch_test_data.sh)
+data/test/*.fastq
+data/test/*.fastq.gz
+
+# Cowork/Claude delivered documents (paper material, not pipeline code)
+Claude outputs/
