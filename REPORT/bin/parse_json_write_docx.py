@@ -62,9 +62,14 @@ def load_codfreq(path):
                 if aa is None:
                     continue
                 counts.setdefault((gene, pos), {})[aa] = counts.get((gene, pos), {}).get(aa, 0) + count
-    except OSError:
+    except OSError as exc:
+        print(f"WARNING: could not open CodFreq file {path}: {exc}")
         return None
     if not totals:
+        print(
+            f"WARNING: CodFreq file {path} was read but no positions parsed "
+            "(check that it is comma-delimited with gene,position,total,codon,count columns)."
+        )
         return None
     return {"counts": counts, "totals": totals}
 
@@ -100,6 +105,62 @@ CLASS_NAMES = {
     "INSTI": "Integrase Strand Transfer Inhibitors",
 }
 CLASS_ORDER = ["PI", "NRTI", "NNRTI", "INSTI"]
+
+# HXB2 reference amino acids at surveillance drug-resistance positions.
+# Used by the codon-frequency section to report the full amino-acid
+# composition at each position directly from CodFreq, independent of the
+# Stanford HIVdb interpretation threshold. Positions follow Stanford gene
+# numbering (PR 1-99, RT 1-560, IN 1-288), which matches the CodFreq output.
+DRM_REF_AA = {
+    "PR": {30: "D", 32: "V", 33: "L", 46: "M", 47: "I", 48: "G", 50: "I",
+           53: "F", 54: "I", 73: "G", 76: "L", 82: "V", 84: "I", 85: "I",
+           88: "N", 90: "L"},
+    "RT": {41: "M", 65: "K", 67: "D", 69: "T", 70: "K", 74: "L", 75: "V",
+           77: "F", 100: "L", 101: "K", 103: "K", 106: "V", 108: "V",
+           115: "Y", 116: "F", 138: "E", 151: "Q", 179: "V", 181: "Y",
+           184: "M", 188: "Y", 190: "G", 210: "L", 215: "T", 219: "K",
+           221: "H", 225: "P", 227: "F", 230: "M", 234: "L"},
+    "IN": {51: "H", 66: "T", 92: "E", 118: "G", 121: "F", 138: "E",
+           140: "G", 143: "Y", 147: "S", 148: "Q", 151: "V", 153: "S",
+           155: "N", 263: "R"},
+}
+
+
+def codon_frequency_rows(prevmap, minor_threshold=0.01):
+    """Build codon-frequency rows at surveillance DRM positions from CodFreq.
+
+    `prevmap` is the structure returned by load_codfreq (per-position amino-acid
+    read counts and totals). For every surveillance position that was sequenced,
+    report the reference amino-acid percentage and every non-reference amino acid
+    present at >= minor_threshold of reads. Positions with no non-reference amino
+    acid above the threshold are omitted to keep the table focused.
+    Returns a list of (gene, position, ref_aa, ref_pct, variant_text, depth).
+    """
+    if not prevmap:
+        return []
+    counts = prevmap.get("counts", {})
+    totals = prevmap.get("totals", {})
+    rows = []
+    for gene in ("PR", "RT", "IN"):
+        for pos in sorted(DRM_REF_AA.get(gene, {})):
+            total = totals.get((gene, pos))
+            if not total:
+                continue
+            ref = DRM_REF_AA[gene][pos]
+            dist = counts.get((gene, pos), {})
+            variants = [
+                (aa, c) for aa, c in dist.items()
+                if aa != ref and c / total >= minor_threshold
+            ]
+            if not variants:
+                continue
+            variants.sort(key=lambda x: -x[1])
+            variant_text = "; ".join(
+                f"{aa} {100.0 * c / total:.1f}% (n={c:,})" for aa, c in variants
+            )
+            ref_pct = f"{100.0 * dist.get(ref, 0) / total:.1f}%"
+            rows.append((gene, pos, ref, ref_pct, variant_text, f"{total:,}"))
+    return rows
 
 
 def as_record(value):
@@ -580,8 +641,8 @@ def page3(doc, s):
     else:
         doc.add_paragraph(
             "By-Reads indicates whether the mutation was identified in the supplied Stanford HIVdb "
-            "By-Reads result. Individual mutation prevalence is not reported because CodFreq read "
-            "counts were not supplied to the report generator."
+            "By-Reads result. Per-mutation prevalence is not shown for this sample because no CodFreq "
+            "read counts were matched to it (see the Codon Frequencies section for details)."
         )
 
     comments = [(name, x) for name, x in resistance if x.get("comments")]
@@ -665,6 +726,52 @@ def page4(doc, s):
         doc.add_paragraph("No Stanford HIVdb validation warnings were reported.")
 
 
+def page5(doc, s):
+    """Codon frequencies at drug-resistance positions, straight from CodFreq."""
+    prevmap = s.get("reads_prevalence")
+    minor = s.get("minor_threshold", 0.01)
+    doc.add_page_break()
+    doc.add_heading("Codon Frequencies at Drug-Resistance Positions", level=1)
+    if not prevmap:
+        doc.add_paragraph(
+            "CodFreq read counts were not available to the report generator, so "
+            "per-codon amino-acid frequencies could not be computed. Supply the "
+            "Stage 1 CodFreq files (--codfreq-dir) to enable this section."
+        )
+        return
+    rows = codon_frequency_rows(prevmap, minor)
+    doc.add_paragraph(
+        "Amino-acid composition at surveillance drug-resistance positions, computed "
+        "directly from CodFreq read counts. The reference (wild-type) amino acid is "
+        "shown with its percentage, followed by every non-reference amino acid present "
+        f"at ≥{minor * 100:.1f}% of reads at that position. This is independent of "
+        "the Stanford HIVdb interpretation threshold, so low-frequency variants are "
+        "visible here even when they are not scored in the main interpretation. "
+        "Low-frequency calls are not strand-bias filtered and should be interpreted "
+        "with care."
+    )
+    if not rows:
+        doc.add_paragraph(
+            "No non-reference amino acid reached the reporting threshold at any "
+            "sequenced surveillance drug-resistance position."
+        )
+        return
+    headers = ["Gene", "Pos", "Ref", "Ref %", f"Non-reference amino acids (≥{minor * 100:.1f}%)", "Depth"]
+    table = doc.add_table(rows=1, cols=len(headers))
+    table.style = "Table Grid"
+    for c, text in zip(table.rows[0].cells, headers):
+        set_cell_text(c, text, bold=True)
+        shade_cell(c, "D9EAF7")
+    for gene, pos, ref, ref_pct, variant_text, depth in rows:
+        cells = table.add_row().cells
+        for cell, value in zip(cells, [gene, pos, ref, ref_pct, variant_text, depth]):
+            set_cell_text(cell, value)
+    doc.add_paragraph(
+        "Positions with no non-reference amino acid above the threshold are omitted. "
+        "\"Depth\" is the total number of reads spanning that codon."
+    )
+
+
 def build_report(sample, output):
     doc = Document()
     configure_document(doc, sample["sample_id"])
@@ -672,6 +779,7 @@ def build_report(sample, output):
     page2(doc, sample)
     page3(doc, sample)
     page4(doc, sample)
+    page5(doc, sample)
     doc.save(output)
 
 
@@ -685,6 +793,9 @@ def main():
     parser.add_argument("--fasta", help="Optional consensus FASTA (reserved for future callability QC)")
     parser.add_argument("--report-dir", help="DOCX output directory")
     parser.add_argument("--codfreq-dir", help="Directory of *.codfreq files for per-mutation prevalence")
+    parser.add_argument("--minor-threshold", type=float, default=0.01,
+                        help="Minimum read fraction (0-1) for a non-reference amino acid to appear "
+                             "in the codon-frequency section (default: 0.01 = 1%%)")
     args = parser.parse_args()
 
     metadata = load_metadata(args.data)
@@ -717,8 +828,12 @@ def main():
             print(f"WARNING: no metadata for sample '{sid}'; skipping")
             continue
         s = normalise_sample(rec, reads.get(sid), metadata[sid])
+        s["minor_threshold"] = args.minor_threshold
         if sid in codfreq_files:
             s["reads_prevalence"] = load_codfreq(codfreq_files[sid])
+        else:
+            print(f"WARNING: no CodFreq file matched sample '{sid}'; "
+                  f"available CodFreq keys: {sorted(codfreq_files) or 'none'}")
         subtypes.append((sid, s["subtype_consensus"]))
         print(f"Processing sample '{sid}' (Patient ID: {safe_text(metadata[sid].get('patient_id'), 'not provided')})")
         if args.reports:
