@@ -20,7 +20,12 @@ process SANITIZEME {
     script:
 
     """
-    SanitizeMe_CLI.py \
+    # SanitizeMe is installed in its own micromamba environment ('host')
+    # so that its Gooey/wxPython GUI dependency stack does not have to
+    # co-solve with the base bioinformatics tools (minimap2, samtools,
+    # ivar, ...). Installed together they make the aarch64 image build
+    # unsolvable; isolating SanitizeMe keeps it available unchanged.
+    micromamba run -n host SanitizeMe_CLI.py \
         -i . \
         -r ${human_reference} \
         -o . \

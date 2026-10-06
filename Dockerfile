@@ -13,10 +13,10 @@
 #     - samtools
 #     - seqtk
 #     - NanoQ
-#     - Medaka
+#     - iVar
 #
 #   Host removal
-#     - SanitizeMe
+#     - SanitizeMe (isolated 'host' env)
 #
 #   HIV analysis
 #     - CodFreq
@@ -98,25 +98,43 @@ RUN micromamba install -y \
         samtools \
         seqtk \
         nanoq \
-        medaka \
         ivar \
         bcftools \
         pysam \
-        sanitizeme \
     && \
     micromamba clean --all --yes
 # ============================================================
-# Apple Silicon compatibility
+# medaka removed from the base environment
 # ============================================================
 #
-# pyabpoa bundled with Medaka triggers SIGILL when the
-# linux/amd64 container is run under emulation on Apple Silicon.
-# NanoHIV-DR uses medaka_consensus, which functions without
-# pyabpoa.
+# The released pipeline builds its consensus with iVar; medaka is
+# not invoked by main.nf. medaka also forced an aarch64 solver
+# conflict (it requires htslib >=1.21, while ivar requires htslib
+# 1.20), so dropping it lets the base environment resolve cleanly.
 #
 # ============================================================
 
-RUN python3 -m pip uninstall -y pyabpoa
+# ============================================================
+# SanitizeMe environment (isolated)
+# ============================================================
+#
+# SanitizeMe pulls a Gooey/wxPython GUI stack. Installed alongside
+# ivar/samtools it makes the aarch64 solve impossible (its GUI deps
+# and htslib pins collide). Installing it in its OWN environment
+# lets that stack resolve independently of the base bioinformatics
+# tools. The SANITIZEME process calls it with:
+#     micromamba run -n host SanitizeMe_CLI.py ...
+#
+# ============================================================
+
+RUN micromamba create -y \
+    -n host \
+    -c conda-forge \
+    -c bioconda \
+        "python=3.11" \
+        sanitizeme \
+    && \
+    micromamba clean --all --yes
 
 # ============================================================
 # CodFreq environment
@@ -394,17 +412,16 @@ RUN echo "============================================================" && \
     echo "NanoQ:" && \
     micromamba run -n base nanoq --version && \
     echo "" && \
-    echo "Medaka:" && \
-    micromamba run -n base medaka --version && \
-    micromamba run -n base python3 -c "import medaka; from medaka import prediction; print('Medaka prediction import OK')" && \
+    echo "iVar:" && \
+    { micromamba run -n base ivar version 2>&1 | head -n 1 || true; } && \
     echo "" && \
     echo "BCFtools:" && \
     micromamba run -n base bcftools --version | head -n 1 && \
     echo "" && \
     echo "SanitizeMe:" && \
-    micromamba run -n base \
+    micromamba run -n host \
         SanitizeMe_CLI.py -h >/dev/null && \
-    echo "SanitizeMe_CLI.py OK" && \
+    echo "SanitizeMe_CLI.py OK (env: host)" && \
     echo "" && \
     echo "fastp:" && \
     micromamba run -n base fastp --version && \
