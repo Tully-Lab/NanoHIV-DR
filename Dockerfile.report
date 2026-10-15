@@ -1,0 +1,21 @@
+# ============================================================
+# NanoHIV-DR report image
+# ============================================================
+#
+# Builds nanohiv-dr-cpu:reportformatted by layering the reporting
+# code (REPORT/) onto the base nanohiv-dr-cpu:latest image. This
+# lets the reporting stage be rebuilt and re-tagged on its own,
+# so that `nextflow run ... -resume` re-runs only the REPORT
+# process (see params.report_image in nextflow.config) without
+# re-running the expensive Stage 1 steps.
+#
+# Build:
+#   docker build -t nanohiv-dr-cpu:latest .
+#   docker build -f Dockerfile.report -t nanohiv-dr-cpu:reportformatted .
+# ============================================================
+
+FROM --platform=linux/amd64 nanohiv-dr-cpu:latest
+
+COPY REPORT /opt/REPORT
+
+RUN chmod +x /opt/REPORT/preprocessing.sh

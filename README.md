@@ -12,7 +12,7 @@ The pipeline runs in **two stages**.
 
 1. Basecalling with **Dorado**
 2. Barcode demultiplexing with **Dorado**
-3. Host (human) read removal with **SanitizeMe**
+3. Host (human) read removal with **SanitizeMe** *(optional — skip with `--skip_sanitize`)*
 4. Read quality/length filtering with **NanoQ**
 5. Reference-guided alignment to **HXB2-pol** with **minimap2** (coordinate-sorted BAM/BAI)
 6. Depth-aware majority consensus with **iVar** (defaults: min base quality 15, allele threshold 0.5, min depth 20; positions below min depth are masked to `N`)
@@ -89,6 +89,16 @@ docker buildx build \
   --load .
 ```
 
+Then build the report image, which layers the reporting code onto the base image (`params.report_image` in `nextflow.config` defaults to this tag):
+
+```
+docker buildx build \
+  --platform linux/amd64 \
+  -f Dockerfile.report \
+  -t nanohiv-dr-cpu:reportformatted \
+  --load .
+```
+
 To build against a specific Dorado version:
 
 ```
@@ -119,6 +129,8 @@ Expected: `nanohiv-dr-cpu   latest`. The `nextflow.config` already enables Docke
 Two large inputs are **not** included in the repository and must be provided once. The small HIV references (`HXB2-pol` and its index, `HIV1.json`) are already included under `references/HIV/`.
 
 ### 1. Human reference genome (for host removal)
+
+This is only required when host removal is enabled (the default). If you run with `--skip_sanitize true`, SanitizeMe is bypassed and the human reference is not needed.
 
 Download the human reference and place it at `references/Human/human_g1k_v37.fasta`:
 
@@ -237,6 +249,7 @@ results/
 | `--outdir` | `results` | Output directory |
 | `--dorado_model` | `dna_r10.4.1_e8.2_400bps_sup@v5.2.0` | Path to the downloaded Dorado model directory |
 | `--kit_name` | `SQK-NBD114-96` | Nanopore barcoding kit |
+| `--skip_sanitize` | `false` | Skip SanitizeMe host-read removal and pass demultiplexed reads straight to NanoQ (no human reference needed) |
 | `--min_quality` / `--min_length` / `--max_length` | 15 / 800 / 1200 | NanoQ read filtering |
 | `--ivar_min_quality` / `--ivar_threshold` / `--ivar_min_depth` | 15 / 0.5 / 20 | iVar consensus settings |
 | `--threads` | 8 | Default CPU allocation for threaded processes |
@@ -255,7 +268,7 @@ A ready-to-run test dataset is **included in the repository**: `data/pod5/filter
 
 Both test routes below need two one-time prerequisites (see **Requirements** and **Required reference data**):
 
-1. the Docker image built — `docker buildx build --platform linux/amd64 -t nanohiv-dr-cpu:latest --load .`
+1. the Docker images built — `docker buildx build --platform linux/amd64 -t nanohiv-dr-cpu:latest --load .` and `docker buildx build --platform linux/amd64 -f Dockerfile.report -t nanohiv-dr-cpu:reportformatted --load .`
 2. the human reference genome at `references/Human/human_g1k_v37.fasta` (used for host removal).
 
 ## Quick test (recommended)
