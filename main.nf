@@ -930,14 +930,28 @@ Please supply exactly one input type.
 
         /*
          * ----------------------------------------------------
-         * 3. SANITIZEME
+         * 3. SANITIZEME (optional)
+         * ----------------------------------------------------
+         *
+         * Host-read removal can be bypassed with --skip_sanitize,
+         * in which case the demultiplexed reads pass straight to
+         * NanoQ.
          * ----------------------------------------------------
          */
 
-        host_removed = SANITIZEME(
-            demultiplexed,
-            human_reference
-        )
+        if (params.skip_sanitize) {
+
+            log.info "SanitizeMe skipped: using demultiplexed reads without host removal"
+            reads_for_nanoq = demultiplexed
+
+        } else {
+
+            log.info "SanitizeMe enabled: removing host reads"
+            reads_for_nanoq = SANITIZEME(
+                demultiplexed,
+                human_reference
+            )
+        }
 
 
         /*
@@ -950,7 +964,7 @@ Please supply exactly one input type.
          */
 
         filtered = NANOQ(
-            host_removed
+            reads_for_nanoq
         )
 
 
